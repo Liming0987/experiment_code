@@ -11,9 +11,14 @@ class BaseModel(torch.nn.Module):
 
     def __init__(self, total_item_num, total_user_num, vector_size, layers):
         super(BaseModel, self).__init__()
+        self.optimizer = None
         self.sim_scale = 10
         self.layers = layers
         self.vector_size = vector_size
+
+        torch.manual_seed(10)
+        torch.cuda.manual_seed(10)
+
         self.item_embeddings = torch.nn.Embedding(total_item_num, vector_size)
 
         self.user_embeddings = torch.nn.Embedding(total_user_num, vector_size)
@@ -36,6 +41,7 @@ class BaseModel(torch.nn.Module):
 
     def evaluate_method(self, predictions, data, metrics):
         y = data['y']
+        print('y average: ' + str(y.sum()/len(y)))
         evaluations = []
         rank = False
         for metric in metrics:
@@ -45,7 +51,16 @@ class BaseModel(torch.nn.Module):
         split_y, split_p = None, None
 
         if rank:
-            uids = data['uid'].reshape([-1])
+            #uids = data['uid'].reshape([-1])
+            uids = data['uid']
+            uids = np.array(uids)
+            #print('uid shape: ' + str(uids.shape))
+            #print('y shape: ' + str(y.shape))
+            y = np.array(y)
+            
+            predictions = predictions.reshape([-1])
+            #print('prediction shape: ' + str(predictions.shape))
+
             sorted_idx = np.lexsort((-y, -predictions,uids))
             sorted_uid = uids[sorted_idx]
             sorted_uid_unique, sorted_uid_idx = np.unique(sorted_uid, return_index=True)
@@ -74,7 +89,7 @@ class BaseModel(torch.nn.Module):
             except Exception as e:
                 raise e
 
-            return evaluations
+        return evaluations
 
 
 
@@ -229,7 +244,8 @@ class BaseModel(torch.nn.Module):
         # print('prediction: ' + str(prediction.size()))
         r_loss = out_dict['r_loss']
 
-        loss = torch.nn.BCELoss(reduction='mean')(prediction, label)
+        loss = torch.nn.BCELoss(reduction='mean')(prediction.view([-1, 1]), label.view([-1, 1]))
+        r_loss = 0
 
         out_dict['loss'] = loss + r_loss
 

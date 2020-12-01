@@ -9,7 +9,7 @@ import logging
 
 class BaseRunner(object):
 
-    def __init__(self, optimizer='GD', lr=0.01, epoch=1, batch_size=128, eval_batch_size=128, l2=1e-5,
+    def __init__(self, optimizer='GD', lr=0.01, epoch=200, batch_size=128, eval_batch_size=128, l2=1e-5,
                  dropout=0.2, grad_clip=10):
         self.optimizer_name = optimizer
         self.lr = lr
@@ -47,18 +47,25 @@ class BaseRunner(object):
                 epoch_train_data = data_processor.get_train_data(epoch=epoch)
                 train_predictions, mean_loss = self.fit(model, epoch_train_data, data_processor, epoch=epoch)
 
+                #print('epoch train data: ')
+                #print(epoch_train_data)
+
+                #print('prediction: ')
+                #print(train_predictions)
+
                 print('mean loss: ' + str(mean_loss))
                 # evaluate 模型效果
-                train_result = [mean_loss] + model.evaluate_method(train_predictions, train_data, ['precision'])
-                # validation_result = self.evaluate(model, validation_data, data_processor)
-                # test_result = self.evaluate(model, test_data, data_processor)
+                train_result = model.evaluate_method(train_predictions, epoch_train_data, ['precision@5', 'precision'])
+                validation_result = self.evaluate(model, validation_data, data_processor, ['precision@5', 'precision'])
+                #test_result = self.evaluate(model, test_data, data_processor)
                 #
                 # self.train_results.append(train_result)
                 # self.valid_results.append(validation_result)
                 # self.test_results.append(test_result)
-                print('precision: ' + self.format_metric(train_result))
+                print('train metrics: ' + self.format_metric(train_result))
                 # logging.info("Epoch %5d \t train = %s " % (epoch + 1, self.format_metric(train_result)))
-                return train_predictions, epoch_train_data
+                # return train_predictions, epoch_train_data
+                print('validation metrics: ' + self.format_metric(validation_result))
 
 
         except KeyboardInterrupt:
@@ -88,13 +95,15 @@ class BaseRunner(object):
         predictions = np.concatenate(predictions)
         return predictions
 
-    def evaluate(self, model, data, data_processor):
+    def evaluate(self, model, data, data_processor, metrics):
         predictions = self.predict(model, data, data_processor)
-        return model.evaluate_method(predictions, data)
+        return model.evaluate_method(predictions, data, metrics)
 
     # for loop batches
     def fit(self, model, data, data_processor, epoch):
-        model.optimizer = self._build_optimizer(model)
+        if model.optimizer is None:
+            model.optimizer = self._build_optimizer(model)
+
         batches = data_processor.prepare_batches(data, self.batch_size)
 
         model.train()
@@ -102,7 +111,7 @@ class BaseRunner(object):
         loss_list = []
         prediction_list = []
 
-        for i, batch in tqdm(list(enumerate(batches))):
+        for i, batch in tqdm(list(enumerate(batches)), desc='Epoch %5d' % (epoch + 1)):
             batch = data_processor.batch_to_gpu(batch)
 
             model.optimizer.zero_grad()
@@ -114,9 +123,9 @@ class BaseRunner(object):
             loss.backward()
 
             loss_list.append(loss.detach().cpu().data.numpy())
-            prediction_list.append(output_dict['prediction'].detach().cpu().data.numpy())
+            prediction_list.append(output_dict['prediction'].detach().cpu().data.numpy()[:batch['real_batch_size']])
 
-            torch.nn.utils.clip_grad_value_(model.parameters(), 10)
+            # torch.nn.utils.clip_grad_value_(model.parameters(), 10)
 
             model.optimizer.step()
 
@@ -130,8 +139,11 @@ if __name__ == '__main__':
     model = BaseModel(dataLoader.item_num, dataLoader.user_num, 64, 2)
     model.apply(model.init_paras)
 
+    if torch.cuda.device_count() > 0:
+        model = model.cuda()
+
     runner = BaseRunner()
-    prediction, data = runner.train(model, dataProcessor)
+    runner.train(model, dataProcessor)
     # test_data = dataProcessor.get_test_data()
     # prediction = runner.predict(model, test_data, dataProcessor)
 

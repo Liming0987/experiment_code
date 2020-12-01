@@ -53,7 +53,7 @@ class DataProcessor(object):
         total_batch = int((num_example + batch_size - 1) / batch_size)
 
         batches = []
-        for batch in tqdm(range(total_batch)):
+        for batch in tqdm(range(total_batch), desc='prepare batches'):
             batches.append(self.get_feed_dict(data=data, batch_start=batch * batch_size,
                                               batch_size=batch_size))
         return batches
