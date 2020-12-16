@@ -44,10 +44,18 @@ class DataLoader(object):
 
         self.train_df, self.validation_df, self.test_df = None, None, None
         self.load_user_item()
-        self.load_data()
+        self.load_interaction_data()
         self.load_his()
         self.load_info()
+        self.append_his()
+        # 对于 Top-K Recommendation，只需保留 正样本，负样本是是训练过程中产生的
+        self.drop_neg()
         # self.save_info()
+
+    def save_info(self):
+        self.train_df.to_csv(os.path.join(self.path, self.dataset + '.train_his.csv'), index=False)
+        self.validation_df.to_csv(os.path.join(self.path, self.dataset + '.validation_his.csv'),index=False)
+        self.test_df.to_csv(os.path.join(self.path, self.dataset + '.test.csv'), index=False)
 
     def load_user_item(self):
         self.user_df, self.item_df = None, None
@@ -56,11 +64,12 @@ class DataLoader(object):
         if os.path.exists(self.item_file):
             self.item_df = pd.read_csv(self.item_file, sep='\t')
 
-    def load_data(self):
+    def load_interaction_data(self):
         self.train_df = pd.read_csv(self.train_file, sep='\t')
         self.validation_df = pd.read_csv(self.validation_file, sep='\t')
-        self.test_df = pd.read_csv(self.test_file, sep='\t')
+        self.test_df = pd.read_csv(self.test_file)
 
+    # 此处的数据是在 data_processor 中用到
     def load_his(self):
         # 把 df [uid, iids] 变成 dict {1: [iid, iid, ...] 2: [iid, iid, ...]}
         def build_his(df):
@@ -91,15 +100,19 @@ class DataLoader(object):
         self.test_neg_df = pd.read_csv(self.test_neg_file, sep='\t')
         self.test_user_neg = build_his(self.test_neg_df)
 
+    # 正例 history 和 负例 history 的 max_history 都是10
     def append_his(self, max_his=10):
         # 包含了 train, validation, test 中的所有的 uid 和 其对应的 iids
         # 正样本是 iid, 负样本是 -iid
         his_dict = {}
+        neg_dict = {}
+        mix_dict = {}
 
         for df in [self.train_df, self.validation_df, self.test_df]:
 
-            history = []  # 最后加入到 df 中
+            history, neg_history, mix_history = [], [], []  # 最后加入到 df 中
 
+            # print(df.columns)
             uids, iids, labels = df['uid'].tolist(), df['iid'].tolist(), df['label'].tolist()
 
             for i, uid in enumerate(uids):
@@ -108,21 +121,42 @@ class DataLoader(object):
                 if uid not in his_dict:
                     his_dict[uid] = []
 
+                if uid not in neg_dict:
+                    neg_dict[uid] = []
+
+                if uid not in mix_dict:
+                    mix_dict[uid] = []
+
                 tmp_his = his_dict[uid] if max_his <= 0 else his_dict[uid][-max_his:]
-                #                 print(tmp_his)
+                tmp_neg = neg_dict[uid] if max_his <= 0 else neg_dict[uid][-max_his:]
+                # 可以考虑是否改成 [-max_his * 2:]
+                tmp_mix = mix_dict[uid] if max_his <= 0 else mix_dict[uid][-max_his:]
+
                 # 去除 [] 第一个元素是 ‘’， history中的元素是 str 类型
                 history.append(str(tmp_his).replace(' ', '')[1:-1])
+                neg_history.append(str(tmp_neg).replace(' ', '')[1:-1])
+                mix_history.append(str(tmp_mix).replace(' ', '')[1:-1])
 
                 if label <= 0:
-                    his_dict[uid].append(-iid)
-                else:
+                    neg_dict[uid].append(iid)
+                    mix_dict[uid].append(-iid)
+                elif label > 0:
                     his_dict[uid].append(iid)
-            df['history'] = history
+                    mix_dict[uid].append(iid)
+
+                # if label <= 0:
+                #     his_dict[uid].append(-iid)
+                # else:
+                #     his_dict[uid].append(iid)
+            df['history'] = history #只保存 positive samples
+            df['history_neg'] = neg_history #只保存 negative samples
+            df['history_mix'] = mix_history #保存 positive and negative samples
 
     def load_info(self):
         max_dict, min_dict = {}, {}
         for df in [self.train_df, self.validation_df, self.test_df]:
             for c in df.columns:
+                # print(c)
                 if c not in max_dict:
                     max_dict[c] = df[c].max()
                 else:
