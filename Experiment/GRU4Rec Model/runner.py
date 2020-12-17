@@ -7,6 +7,11 @@ from data_processor import DataProcessor
 from data_loader import DataLoader
 import gc
 
+import os, sys
+currentdir = os.path.dirname(os.path.realpath(__file__))
+parentdir = os.path.dirname(currentdir)
+sys.path.append(parentdir)
+
 class GRU4RecRunner(object):
     def __init__(self, model, optimizer='Adam', lr=0.001, epoch=3, batch_size=128, l2=1e-5):
         self.model = model
