@@ -4,6 +4,7 @@ from collections import defaultdict
 from sklearn.metrics import *
 import numpy as np
 import torch.nn.functional as F
+import os
 
 class STAMP(nn.Module):
     def __init__(self, num_users, num_items, embedding_size, attention_size):
@@ -174,5 +175,21 @@ class STAMP(nn.Module):
                 raise e
 
         return evaluations
+
+    def save_model(self, model_path):
+        dir_path = os.path.dirname(model_path)
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+        torch.save(self.state_dict(), model_path)
+        print('save model to ' + model_path)
+
+    def load_model(self, model_path, cpu=False):
+        if cpu:
+            self.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
+        else:
+            self.load_state_dict(torch.load(model_path))
+        self.eval()
+
+        print('load model from ' + model_path)
 
 

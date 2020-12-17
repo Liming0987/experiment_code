@@ -15,6 +15,10 @@ class DeepMFRunner(object):
         self.optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=l2)
         self.metrics = ['precision@1', 'ndcg@10']
 
+        self.train_results, self.valid_results, self.test_results = [], [], []
+
+        self.model_path = './model/DeepMF/DeepMF.pt'
+
     def train(self, data_processor):
         validation_data = data_processor.get_validation_data()
         train_data = data_processor.get_train_data(epoch=-1)
@@ -32,10 +36,58 @@ class DeepMFRunner(object):
             validation_result = self.evaluate(validation_data, data_processor)
             test_result = self.evaluate(test_data, data_processor)
 
+            self.train_results.append(train_result)
+            self.valid_results.append(validation_result)
+            self.test_results.append(test_result)
+
             print("Epoch %5d \t train= %s validation= %s test= %s "
                   % (epoch + 1, self.format_metric(train_result), self.format_metric(validation_result),
                      self.format_metric(test_result)) + ','.join(self.metrics))
 
+            # 还没有写 early stopping
+            if self.best_result(self.valid_results) == self.valid_results[-1]:
+                model.save_model()
+
+            if self.eva_termination():
+                print("Early stop at %d based on validation result." % (epoch + 1))
+                break
+
+        # find the best valiation result across interations
+        best_valid_result = self.best_result(self.valid_results)
+        best_epoch = self.valid_results.index(best_valid_result)
+        print("Best Iter(valiation) = %5d\t train= %s valid= %s test= %s"
+              % (best_epoch + 1,
+                 self.format_metric(self.train_results[best_epoch]),
+                 self.format_metric(self.valid_results[best_epoch]),
+                 self.format_metric(self.test_results[best_epoch])) + ','.join(self.metrics))
+
+        best_test_score = self.best_result(self.test_results)
+        best_epoch = self.test_results.index(best_test_score)
+        print("Best Iter(test) = %5d\t train= %s valid= %s test= %s"
+              % (best_epoch + 1,
+                 self.format_metric(self.train_results[best_epoch]),
+                 self.format_metric(self.valid_results[best_epoch]),
+                 self.format_metric(self.test_results[best_epoch])) + ','.join(self.metrics))
+
+    def best_result(self, results_list):
+        return max(results_list)
+
+    def eva_termination(self):
+        """
+        检查是否终止训练，基于验证集
+        :param model:
+        :return:
+        """
+        metric = self.metrics[0]
+        valid = self.valid_results
+        if len(valid) > 20 and self.strictly_increasing(valid[-5:]):
+            return True
+        elif len(valid) - valid.index(self.best_result(valid)) > 20:
+            return True
+        return False
+
+    def strictly_increasing(self, l):
+        return all(x < y for x, y in zip(l, l[1:]))
     def format_metric(self, metric):
         format_str = []
         for m in metric:

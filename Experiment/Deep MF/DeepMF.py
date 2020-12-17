@@ -3,10 +3,13 @@ from torch import nn
 from collections import defaultdict
 from sklearn.metrics import *
 import numpy as np
+import os
 
 class DeepMF(nn.Module):
     def __init__(self, data_processor,num_users, num_items, embedding_size):
         super(DeepMF, self).__init__()
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         torch.manual_seed(10)
         torch.cuda.manual_seed(10)
@@ -108,7 +111,7 @@ class DeepMF(nn.Module):
     def forward(self, feed_dict):
         y = feed_dict['y']
         prediction = self.predict(feed_dict)
-        y = torch.cat([y, torch.from_numpy(np.array([0.0] * len(y), dtype=float)).type(torch.FloatTensor)])
+        y = torch.cat([y, torch.from_numpy(np.array([0.0] * len(y), dtype=float)).type(torch.FloatTensor).to(self.device)])
         loss = torch.nn.BCELoss(reduction='mean')(prediction, y)
 
         feed_dict['prediction'] = prediction
@@ -131,4 +134,20 @@ class DeepMF(nn.Module):
         similarity = torch.clamp(similarity, min=1e-8)
 
         return similarity
+
+    def save_model(self, model_path):
+        dir_path = os.path.dirname(model_path)
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+        torch.save(self.state_dict(), model_path)
+        print('save model to ' + model_path)
+
+    def load_model(self, model_path, cpu=False):
+        if cpu:
+            self.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
+        else:
+            self.load_state_dict(torch.load(model_path))
+        self.eval()
+
+        print('load model from ' + model_path)
 
